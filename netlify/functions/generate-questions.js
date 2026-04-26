@@ -1,7 +1,7 @@
 /**
  * IntegrityAI — Smart Question Engine
- * Netlify Serverless Function — Google Gemini 2.0 Flash (free tier)
- * VERSION: GEMINI-4
+ * Netlify Serverless Function — Groq API / Llama 3 (genuinely free)
+ * VERSION: GROQ-1
  */
 
 const QUESTION_GEN_PROMPT = `You are IntegrityAI's Smart Question Engine — an expert technical interviewer specialising in detecting AI-assisted interview cheating.
@@ -18,7 +18,7 @@ TRAP QUESTIONS (4-5 questions) — MOST CRITICAL:
   e) ACHIEVEMENT DEPTH: Ask for baseline metric, tool used, and biggest change behind any % claim.
 PRESSURE FOLLOW-UPS (3-4 questions): Force spontaneous thinking when answers feel scripted.
 
-Respond ONLY with valid JSON, no markdown, no code fences:
+Respond ONLY with valid JSON, no markdown, no code fences, no explanation outside the JSON:
 {
   "candidate_name": "name from resume or Candidate",
   "candidate_summary": "2-sentence honest assessment",
@@ -44,43 +44,36 @@ RESUME TO ANALYSE:
 
 exports.handler = async (event) => {
 
-  // ── Diagnostic endpoint: GET — tests actual Gemini connection live
+  // ── Diagnostic: GET /.netlify/functions/generate-questions
   if (event.httpMethod === "GET") {
-    const apiKey = process.env.GEMINI_API_KEY || "";
-
-    // Make a real test call to Gemini
-    let geminiTest = {};
+    const apiKey = process.env.GROQ_API_KEY || "";
+    let groqTest = {};
     try {
-      const testRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: "Say hello in one word." }] }],
-            generationConfig: { maxOutputTokens: 10 }
-          })
-        }
-      );
+      const testRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: "llama3-70b-8192",
+          messages: [{ role: "user", content: "Say hello in one word." }],
+          max_tokens: 10
+        })
+      });
       const testData = await testRes.json();
-      geminiTest = {
-        http_status: testRes.status,
-        ok: testRes.ok,
-        raw_response: testData
-      };
+      groqTest = { http_status: testRes.status, ok: testRes.ok, raw_response: testData };
     } catch (e) {
-      geminiTest = { error: e.message };
+      groqTest = { error: e.message };
     }
-
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        version: "GEMINI-5",
+        version: "GROQ-1",
         key_set: apiKey.length > 0,
         key_prefix: apiKey.substring(0, 7),
-        key_length: apiKey.length,
-        gemini_test: geminiTest
+        groq_test: groqTest
       }),
     };
   }
@@ -100,43 +93,44 @@ exports.handler = async (event) => {
       };
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
       return {
         statusCode: 500,
         headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ detail: "GEMINI_API_KEY not set in Netlify environment variables." }),
+        body: JSON.stringify({ detail: "GROQ_API_KEY not set in Netlify environment variables." }),
       };
     }
 
-    // Call Google Gemini API
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
-
-    const geminiResponse = await fetch(geminiUrl, {
+    // Call Groq API (free tier — Llama 3 70B)
+    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: QUESTION_GEN_PROMPT + resume_text }] }],
-        generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+        model: "llama3-70b-8192",
+        messages: [{ role: "user", content: QUESTION_GEN_PROMPT + resume_text }],
+        max_tokens: 4096,
+        temperature: 0.7
       }),
     });
 
-    const geminiData = await geminiResponse.json();
+    const groqData = await groqResponse.json();
 
-    if (!geminiResponse.ok) {
-      // Return full Gemini error for debugging
+    if (!groqResponse.ok) {
       return {
         statusCode: 500,
         headers: { "Access-Control-Allow-Origin": "*" },
         body: JSON.stringify({
-          detail: geminiData?.error?.message || `Gemini API error ${geminiResponse.status}`,
-          gemini_status: geminiResponse.status,
-          gemini_error: geminiData?.error || {}
+          detail: groqData?.error?.message || `Groq API error ${groqResponse.status}`,
+          groq_error: groqData?.error || {}
         }),
       };
     }
 
-    const rawText = geminiData.candidates[0].content.parts[0].text;
+    const rawText = groqData.choices[0].message.content;
 
     // Extract JSON from response
     const match = rawText.match(/\{[\s\S]*\}/);
@@ -144,7 +138,7 @@ exports.handler = async (event) => {
       return {
         statusCode: 500,
         headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ detail: "Unexpected response format from Gemini. Please try again." }),
+        body: JSON.stringify({ detail: "Unexpected response format. Please try again." }),
       };
     }
 
@@ -160,7 +154,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ detail: err.message, stack: err.stack }),
+      body: JSON.stringify({ detail: err.message }),
     };
   }
 };
