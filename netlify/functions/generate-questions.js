@@ -1,7 +1,7 @@
 /**
  * IntegrityAI — Smart Question Engine
- * Netlify Serverless Function — Google Gemini 1.5 Flash (free tier)
- * VERSION: GEMINI-2
+ * Netlify Serverless Function — Google Gemini 2.0 Flash (free tier)
+ * VERSION: GEMINI-4
  */
 
 const QUESTION_GEN_PROMPT = `You are IntegrityAI's Smart Question Engine — an expert technical interviewer specialising in detecting AI-assisted interview cheating.
@@ -52,7 +52,7 @@ exports.handler = async (event) => {
     let geminiTest = {};
     try {
       const testRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -76,7 +76,7 @@ exports.handler = async (event) => {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        version: "GEMINI-3",
+        version: "GEMINI-4",
         key_set: apiKey.length > 0,
         key_prefix: apiKey.substring(0, 7),
         key_length: apiKey.length,
@@ -110,7 +110,7 @@ exports.handler = async (event) => {
     }
 
     // Call Google Gemini API
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
     const geminiResponse = await fetch(geminiUrl, {
       method: "POST",
