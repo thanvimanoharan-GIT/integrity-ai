@@ -1,6 +1,7 @@
 /**
  * IntegrityAI — Smart Question Engine
- * Netlify Serverless Function — powered by Google Gemini (free tier)
+ * Netlify Serverless Function — Google Gemini 1.5 Flash (free tier)
+ * VERSION: GEMINI-2
  */
 
 const QUESTION_GEN_PROMPT = `You are IntegrityAI's Smart Question Engine — an expert technical interviewer specialising in detecting AI-assisted interview cheating.
@@ -10,11 +11,11 @@ Analyse the resume and produce a strategic question bank designed to test genuin
 TECHNICAL (5-7 questions): Personalised to their exact stack. Probe edge cases, trade-offs, failure modes they'd only know from real use.
 BEHAVIORAL (3-4 questions): STAR-format tied to specific roles and projects in their resume.
 TRAP QUESTIONS (4-5 questions) — MOST CRITICAL:
-  a) FAKE TOOL TRAP: Invent a plausible-sounding but non-existent tool in their stack. Real experts say "never heard of it." Coached candidates play along.
-  b) CONTRADICTION PROBE: Cross-reference two claims in their resume that reveal tension.
-  c) SIMPLICITY TEST: "Explain [complex claimed skill] to a non-technical manager in 2 sentences."
-  d) SPECIFICITY DRILL: Ask for exact detail only real users know — error messages, config names, default ports.
-  e) ACHIEVEMENT DEPTH: If they claim "improved performance by 40%", ask for baseline metric, tool used, and single biggest change.
+  a) FAKE TOOL TRAP: Invent a plausible-sounding but non-existent tool in their stack.
+  b) CONTRADICTION PROBE: Cross-reference two claims that reveal tension.
+  c) SIMPLICITY TEST: Explain complex claimed skill to a non-technical manager in 2 sentences.
+  d) SPECIFICITY DRILL: Ask for exact detail only real users know.
+  e) ACHIEVEMENT DEPTH: Ask for baseline metric, tool used, and biggest change behind any % claim.
 PRESSURE FOLLOW-UPS (3-4 questions): Force spontaneous thinking when answers feel scripted.
 
 Respond ONLY with valid JSON, no markdown, no code fences:
@@ -42,6 +43,24 @@ RESUME TO ANALYSE:
 `;
 
 exports.handler = async (event) => {
+
+  // ── Diagnostic endpoint: GET /.netlify/functions/generate-questions
+  // Visit this URL in browser to confirm function version + key status
+  if (event.httpMethod === "GET") {
+    const apiKey = process.env.GEMINI_API_KEY || "";
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: "GEMINI-2",
+        key_set: apiKey.length > 0,
+        key_prefix: apiKey.substring(0, 7),
+        key_length: apiKey.length,
+        expected_prefix: "AIzaSy"
+      }),
+    };
+  }
+
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: JSON.stringify({ detail: "Method not allowed" }) };
   }
@@ -62,33 +81,37 @@ exports.handler = async (event) => {
       return {
         statusCode: 500,
         headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ detail: "GEMINI_API_KEY not configured on server." }),
+        body: JSON.stringify({ detail: "GEMINI_API_KEY not set in Netlify environment variables." }),
       };
     }
 
-    // Call Google Gemini API (free tier — no credit card needed)
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: QUESTION_GEN_PROMPT + resume_text }] }],
-          generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
-        }),
-      }
-    );
+    // Call Google Gemini API
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const geminiResponse = await fetch(geminiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: QUESTION_GEN_PROMPT + resume_text }] }],
+        generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+      }),
+    });
+
+    const geminiData = await geminiResponse.json();
 
     if (!geminiResponse.ok) {
-      const errData = await geminiResponse.json().catch(() => ({}));
+      // Return full Gemini error for debugging
       return {
         statusCode: 500,
         headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ detail: errData?.error?.message || `Gemini API error ${geminiResponse.status}` }),
+        body: JSON.stringify({
+          detail: geminiData?.error?.message || `Gemini API error ${geminiResponse.status}`,
+          gemini_status: geminiResponse.status,
+          gemini_error: geminiData?.error || {}
+        }),
       };
     }
 
-    const geminiData = await geminiResponse.json();
     const rawText = geminiData.candidates[0].content.parts[0].text;
 
     // Extract JSON from response
@@ -97,7 +120,7 @@ exports.handler = async (event) => {
       return {
         statusCode: 500,
         headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ detail: "Unexpected response format. Please try again." }),
+        body: JSON.stringify({ detail: "Unexpected response format from Gemini. Please try again." }),
       };
     }
 
@@ -113,7 +136,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ detail: err.message }),
+      body: JSON.stringify({ detail: err.message, stack: err.stack }),
     };
   }
 };
