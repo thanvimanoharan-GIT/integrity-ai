@@ -56,7 +56,7 @@ exports.handler = async (event) => {
           "Authorization": `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: "llama3-70b-8192",
+          model: "llama-3.3-70b-versatile",
           messages: [{ role: "user", content: "Say hello in one word." }],
           max_tokens: 10
         })
@@ -70,7 +70,7 @@ exports.handler = async (event) => {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        version: "GROQ-1",
+        version: "GROQ-2",
         key_set: apiKey.length > 0,
         key_prefix: apiKey.substring(0, 7),
         groq_test: groqTest
@@ -110,7 +110,7 @@ exports.handler = async (event) => {
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "llama3-70b-8192",
+        model: "llama-3.3-70b-versatile",
         messages: [{ role: "user", content: QUESTION_GEN_PROMPT + resume_text }],
         max_tokens: 4096,
         temperature: 0.7
