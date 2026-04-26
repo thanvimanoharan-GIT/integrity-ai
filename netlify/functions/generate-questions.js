@@ -1,56 +1,27 @@
 /**
  * IntegrityAI — Smart Question Engine
- * Netlify Serverless Function
- *
- * This function runs on Netlify's servers (free).
- * It holds your Anthropic API key safely as an environment variable.
- * The browser never sees your key — it only talks to this function.
+ * Netlify Serverless Function — powered by Google Gemini (free tier)
  */
 
-const QUESTION_GEN_PROMPT = `You are IntegrityAI's Smart Question Engine — an expert technical interviewer and HR consultant who specialises in detecting AI-assisted and coached interview cheating.
+const QUESTION_GEN_PROMPT = `You are IntegrityAI's Smart Question Engine — an expert technical interviewer specialising in detecting AI-assisted interview cheating.
 
-Your task: analyse the provided resume and produce a strategic interview question bank designed to:
-1. Test GENUINE technical depth, not surface recall.
-2. EXPOSE scripted or AI-generated answers by forcing real-world specificity.
-3. VERIFY hands-on experience through contradiction traps and detail probes.
+Analyse the resume and produce a strategic question bank designed to test genuine depth and expose scripted answers.
 
-QUESTION CATEGORIES:
+TECHNICAL (5-7 questions): Personalised to their exact stack. Probe edge cases, trade-offs, failure modes they'd only know from real use.
+BEHAVIORAL (3-4 questions): STAR-format tied to specific roles and projects in their resume.
+TRAP QUESTIONS (4-5 questions) — MOST CRITICAL:
+  a) FAKE TOOL TRAP: Invent a plausible-sounding but non-existent tool in their stack. Real experts say "never heard of it." Coached candidates play along.
+  b) CONTRADICTION PROBE: Cross-reference two claims in their resume that reveal tension.
+  c) SIMPLICITY TEST: "Explain [complex claimed skill] to a non-technical manager in 2 sentences."
+  d) SPECIFICITY DRILL: Ask for exact detail only real users know — error messages, config names, default ports.
+  e) ACHIEVEMENT DEPTH: If they claim "improved performance by 40%", ask for baseline metric, tool used, and single biggest change.
+PRESSURE FOLLOW-UPS (3-4 questions): Force spontaneous thinking when answers feel scripted.
 
-TECHNICAL (5-7 questions)
-- Personalised to the candidate's exact tech stack, frameworks, and project claims.
-- Probe edge cases, trade-offs, failure modes they'd only know from real use.
-- Include at least one "why did you choose X over Y?" question.
-
-BEHAVIORAL (3-4 questions)
-- STAR-format, tied to specific roles and projects in their resume.
-- Reference actual timeframes or company names from their history.
-
-TRAP QUESTIONS (4-5 questions) - MOST CRITICAL
-a) FAKE TOOL TRAP: Invent a plausible-sounding but non-existent tool in their stack.
-   If they use React, mention "ReactFusion StateSync".
-   If they use AWS, mention "AWS DataBridge Connector".
-   If they use Python, mention "PyFlowX orchestration library".
-   A real expert says "I've never heard of that." A coached candidate may play along.
-b) CONTRADICTION PROBE: Cross-reference two claims in their resume that reveal tension.
-c) SIMPLICITY TEST: "Explain [complex claimed skill] to a non-technical manager in 2 sentences."
-d) SPECIFICITY DRILL: Ask for exact detail only real users know — error messages, config file names, default port numbers.
-e) ACHIEVEMENT DEPTH: If they claim "improved performance by 40%", ask for the baseline metric, measurement tool, and the single biggest change.
-
-PRESSURE FOLLOW-UPS (3-4 questions)
-For when the interviewer senses a scripted answer — force spontaneous thinking.
-Example: "Forget the textbook answer. Tell me the last time this broke in production."
-
-For each question also provide:
-- why_it_matters: what genuine vs coached answers reveal
-- red_flags: exact phrases that signal a scripted answer
-- follow_up: one probing follow-up to dig deeper
-
-OUTPUT: Respond ONLY with valid JSON. No markdown. No explanation outside JSON.
-
+Respond ONLY with valid JSON, no markdown, no code fences:
 {
   "candidate_name": "name from resume or Candidate",
-  "candidate_summary": "2-sentence honest assessment of claimed profile",
-  "risk_flags": ["specific resume claims worth extra scrutiny"],
+  "candidate_summary": "2-sentence honest assessment",
+  "risk_flags": ["specific claims worth extra scrutiny"],
   "questions": [
     {
       "id": 1,
@@ -60,37 +31,22 @@ OUTPUT: Respond ONLY with valid JSON. No markdown. No explanation outside JSON.
       "question": "The exact question to ask",
       "why_it_matters": "What genuine vs coached answers reveal",
       "red_flags": "Phrases that suggest a scripted answer",
-      "follow_up": "Probing follow-up if they answer well"
+      "follow_up": "Probing follow-up"
     }
   ],
   "interviewer_tips": "2-3 sentence strategy note"
 }
-
 trap_type values: fake_tool | contradiction | simplicity | specificity | achievement_depth | null
 
 RESUME TO ANALYSE:
 `;
 
 exports.handler = async (event) => {
-  // Only accept POST requests
   if (event.httpMethod !== "POST") {
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ detail: "Method not allowed" }),
-    };
-  }
-
-  // Handle CORS preflight
-  if (event.httpMethod === "OPTIONS") {
-    return {
-      statusCode: 200,
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: "",
-    };
+    return { statusCode: 405, body: JSON.stringify({ detail: "Method not allowed" }) };
   }
 
   try {
-    // Parse the request body
     const { resume_text } = JSON.parse(event.body);
 
     if (!resume_text || resume_text.trim().length < 50) {
@@ -101,57 +57,47 @@ exports.handler = async (event) => {
       };
     }
 
-    // Get API key from Netlify environment variable (never visible to browser)
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return {
         statusCode: 500,
         headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ detail: "API key not configured on server." }),
+        body: JSON.stringify({ detail: "GEMINI_API_KEY not configured on server." }),
       };
     }
 
-    // Call Claude API using native fetch (no npm packages needed)
-    const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 4096,
-        messages: [
-          {
-            role: "user",
-            content: QUESTION_GEN_PROMPT + resume_text,
-          },
-        ],
-      }),
-    });
+    // Call Google Gemini API (free tier — no credit card needed)
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: QUESTION_GEN_PROMPT + resume_text }] }],
+          generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+        }),
+      }
+    );
 
-    if (!claudeResponse.ok) {
-      const errData = await claudeResponse.json().catch(() => ({}));
+    if (!geminiResponse.ok) {
+      const errData = await geminiResponse.json().catch(() => ({}));
       return {
         statusCode: 500,
         headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({
-          detail: errData?.error?.message || `Claude API error ${claudeResponse.status}`,
-        }),
+        body: JSON.stringify({ detail: errData?.error?.message || `Gemini API error ${geminiResponse.status}` }),
       };
     }
 
-    const claudeData = await claudeResponse.json();
-    const rawText = claudeData.content[0].text;
+    const geminiData = await geminiResponse.json();
+    const rawText = geminiData.candidates[0].content.parts[0].text;
 
-    // Extract JSON from Claude's response
+    // Extract JSON from response
     const match = rawText.match(/\{[\s\S]*\}/);
     if (!match) {
       return {
         statusCode: 500,
         headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ detail: "Unexpected response format from Claude. Try again." }),
+        body: JSON.stringify({ detail: "Unexpected response format. Please try again." }),
       };
     }
 
@@ -159,10 +105,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
       body: JSON.stringify(result),
     };
 
