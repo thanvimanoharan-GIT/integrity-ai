@@ -44,19 +44,43 @@ RESUME TO ANALYSE:
 
 exports.handler = async (event) => {
 
-  // ── Diagnostic endpoint: GET /.netlify/functions/generate-questions
-  // Visit this URL in browser to confirm function version + key status
+  // ── Diagnostic endpoint: GET — tests actual Gemini connection live
   if (event.httpMethod === "GET") {
     const apiKey = process.env.GEMINI_API_KEY || "";
+
+    // Make a real test call to Gemini
+    let geminiTest = {};
+    try {
+      const testRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: "Say hello in one word." }] }],
+            generationConfig: { maxOutputTokens: 10 }
+          })
+        }
+      );
+      const testData = await testRes.json();
+      geminiTest = {
+        http_status: testRes.status,
+        ok: testRes.ok,
+        raw_response: testData
+      };
+    } catch (e) {
+      geminiTest = { error: e.message };
+    }
+
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        version: "GEMINI-2",
+        version: "GEMINI-3",
         key_set: apiKey.length > 0,
         key_prefix: apiKey.substring(0, 7),
         key_length: apiKey.length,
-        expected_prefix: "AIzaSy"
+        gemini_test: geminiTest
       }),
     };
   }
